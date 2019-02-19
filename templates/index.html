@@ -23,7 +23,7 @@
 <body>
   <nav class="navbar navbar-default">
     <div class="container-fluid">
-      <a class="navbar-brand" href="#">LogonTracer</a>
+      <a class="navbar-brand" href="#"><img src="static/images/logo_top.svg" alt="top" width="190" style="margin-top: -5px"></a>
       <div class="collapse navbar-collapse">
         <form class="navbar-form navbar-left" role="search">
           <div class="form-group">
@@ -91,6 +91,7 @@
           <button type="button" class="list-group-item" data-toggle="tooltip" data-placement="bottom" data-original-title="Visualizing Services Control Manager logon (Logon type: 5)." onclick="createServiceQuery()">Service Logon</button>
           <button type="button" class="list-group-item" data-toggle="tooltip" data-placement="bottom" data-original-title="Visualizing the error log that the ms14-068 exploit failed." onclick="create14068Query()">MS14-068 Exploit Failure</button>
           <button type="button" class="list-group-item" data-toggle="tooltip" data-placement="bottom" data-original-title="Visualizing failed logon." onclick="createFailQuery()">Logon Failure</button>
+          <button type="button" class="list-group-item" data-toggle="tooltip" data-placement="bottom" data-original-title="Visualizing DCSync and DCShadow log." onclick="dcsQuery()">Detect DCSync/DCShadow</button>
           <button type="button" class="list-group-item" data-toggle="tooltip" data-placement="bottom" data-original-title="Visualizing deleted or added users." onclick="adddelUsersQuery()">Add/Delete Users</button>
           <button type="button" class="list-group-item" data-toggle="tooltip" data-placement="bottom" data-original-title="Visualizing all domain names. If an attacker is intrude into a network, there may be a malicious domain name." onclick="createDomainQuery()">Domain Check</button>
           <button type="button" class="list-group-item" data-toggle="tooltip" data-placement="bottom" data-original-title="Visualizing changed audit policy." onclick="policyQuery()">Audit Policy Change</button>
@@ -103,9 +104,7 @@
           <label class="btn btn-default">
             <input type="checkbox" name="options" id="label-type" autocomplete="off">Type</label>
           <label class="btn btn-default">
-            <input type="checkbox" name="options" id="label-status" autocomplete="off">Status</label>
-          <label class="btn btn-default">
-            <input type="checkbox" name="options" id="label-authname" autocomplete="off">AuthName</label>
+            <input type="checkbox" name="options" id="label-authname" autocomplete="off">Auth</label>
         </div>
         <hr>
         <a data-toggle="tooltip" data-placement="bottom" data-original-title="Select visualization graph mode.">Graph mode</a><br>
@@ -116,6 +115,8 @@
 		        <input type="radio" id="modeCose" name="graphmode">cose</label>
           <label class="btn btn-default">
 		        <input type="radio" id="modeCircle" name="graphmode">circle</label>
+          <label class="btn btn-default">
+  		      <input type="radio" id="modeTree" name="graphmode">tree</label>
         </div>
         <hr>
         <a data-toggle="tooltip" data-placement="bottom" data-original-title="Enable visualization of malicious account ranking.">Rank visualize mode</a><br>
@@ -192,7 +193,7 @@
           <p>Web page loading slow due to large graph. Do you want to continue searching?</p>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-default" onclick="contQuery()" data-dismiss="modal">Yes</button>\
+          <button type="button" class="btn btn-default" onclick="contQuery()" data-dismiss="modal">Yes</button>
           <button type="button" class="btn btn-primary" data-dismiss="modal">No</button>
         </div>
       </div>

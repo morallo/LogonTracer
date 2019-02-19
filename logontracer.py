@@ -9,7 +9,6 @@ import os
 import sys
 import re
 import argparse
-import itertools
 import datetime
 import subprocess
 
@@ -80,10 +79,20 @@ NEO4J_PORT = "7474"
 WEB_PORT = 8080
 
 # Check Event Id
-EVENT_ID = [4624, 4625, 4768, 4769, 4776, 4672, 4720, 4726, 4728, 4729, 4732, 4733, 4756, 4757, 4719]
+EVENT_ID = [4624, 4625, 4662, 4768, 4769, 4776, 4672, 4720, 4726, 4728, 4729, 4732, 4733, 4756, 4757, 4719, 5137, 5141]
 
 # EVTX Header
 EVTX_HEADER = b"\x45\x6C\x66\x46\x69\x6C\x65\x00"
+
+# String Check list
+UCHECK = r"[%*+=\[\]\\/|;:\"<>?,&]"
+HCHECK = r"[*\\/|:\"<>?&]"
+
+# IPv4 regex
+IPv4_PATTERN = re.compile(r"\A\d+\.\d+\.\d+\.\d+\Z", re.DOTALL)
+
+# IPv6 regex
+IPv6_PATTERN = re.compile(r"\A(::(([0-9a-f]|[1-9a-f][0-9a-f]{1,3})(:([0-9a-f]|[1-9a-f][0-9a-f]{1,3})){0,5})?|([0-9a-f]|[1-9a-f][0-9a-f]{1,3})(::(([0-9a-f]|[1-9a-f][0-9a-f]{1,3})(:([0-9a-f]|[1-9a-f][0-9a-f]{1,3})){0,4})?|:([0-9a-f]|[1-9a-f][0-9a-f]{1,3})(::(([0-9a-f]|[1-9a-f][0-9a-f]{1,3})(:([0-9a-f]|[1-9a-f][0-9a-f]{1,3})){0,3})?|:([0-9a-f]|[1-9a-f][0-9a-f]{1,3})(::(([0-9a-f]|[1-9a-f][0-9a-f]{1,3})(:([0-9a-f]|[1-9a-f][0-9a-f]{1,3})){0,2})?|:([0-9a-f]|[1-9a-f][0-9a-f]{1,3})(::(([0-9a-f]|[1-9a-f][0-9a-f]{1,3})(:([0-9a-f]|[1-9a-f][0-9a-f]{1,3}))?)?|:([0-9a-f]|[1-9a-f][0-9a-f]{1,3})(::([0-9a-f]|[1-9a-f][0-9a-f]{1,3})?|(:([0-9a-f]|[1-9a-f][0-9a-f]{1,3})){3}))))))\Z", re.DOTALL)
 
 # LogonTracer folder path
 FPATH = os.path.dirname(os.path.abspath(__file__))
@@ -254,6 +263,7 @@ if args.server:
 if args.port:
     WEB_PORT = args.port
 
+
 # Web application index.html
 @app.route('/')
 def index():
@@ -277,26 +287,43 @@ def logs():
 # Web application upload
 @app.route("/upload", methods=["POST"])
 def do_upload():
-    filelist= ""
+    UPLOAD_DIR = os.path.join(FPATH, 'upload')
+    filelist = ""
+
+    if os.path.exists(UPLOAD_DIR) is False:
+        os.mkdir(UPLOAD_DIR)
+        print("[*] make upload folder %s." % UPLOAD_DIR)
+
     try:
         timezone = request.form["timezone"]
         logtype = request.form["logtype"]
-        for  i in range(0, len(request.files)):
+        for i in range(0, len(request.files)):
             loadfile = "file" + str(i)
             file = request.files[loadfile]
             if file and file.filename:
-                filename = file.filename
+                if "EVTX" in logtype:
+                    filename = os.path.join(UPLOAD_DIR, str(i) + ".evtx")
+                elif "XML" in logtype:
+                    filename = os.path.join(UPLOAD_DIR, str(i) + ".xml")
+                else:
+                    continue
                 file.save(filename)
                 filelist += filename + " "
         if "EVTX" in logtype:
             logoption = " -e "
-        if "XML" in logtype:
+        elif "XML" in logtype:
             logoption = " -x "
-        parse_command = "nohup python3 " + FPATH + "/logontracer.py --delete -z " + timezone + logoption + filelist + " -u " + NEO4J_USER + " -p " + NEO4J_PASSWORD + " >  " + FPATH + "/static/logontracer.log 2>&1 &";
+        else:
+            return "FAIL"
+        if not re.search(r"\A-{0,1}[0-9]{1,2}\Z", timezone):
+            return "FAIL"
+
+        parse_command = "nohup python3 " + FPATH + "/logontracer.py --delete -z " + timezone + logoption + filelist + " -u " + NEO4J_USER + " -p " + NEO4J_PASSWORD + " >  " + FPATH + "/static/logontracer.log 2>&1 &"
         subprocess.call("rm -f " + FPATH + "/static/logontracer.log > /dev/null", shell=True)
         subprocess.call(parse_command, shell=True)
-        #parse_evtx(filename)
+        # parse_evtx(filename)
         return "SUCCESS"
+
     except:
         return "FAIL"
 
@@ -310,7 +337,7 @@ def adetection(counts, users, starttime, tohours):
     for _, event in counts.iterrows():
         column = int((datetime.datetime.strptime(event["dates"], "%Y-%m-%d  %H:%M:%S") - starttime).total_seconds() / 3600)
         row = users.index(event["username"])
-        #count_array[row, column, 0] = count_array[row, column, 0] + count
+        # count_array[row, column, 0] = count_array[row, column, 0] + count
         if event["eventid"] == 4624:
             count_array[0, row, column] = event["count"]
         elif event["eventid"] == 4625:
@@ -322,7 +349,7 @@ def adetection(counts, users, starttime, tohours):
         elif event["eventid"] == 4776:
             count_array[4, row, column] = event["count"]
 
-    #count_average = count_array.mean(axis=0)
+    # count_average = count_array.mean(axis=0)
     count_sum = np.sum(count_array, axis=0)
     count_average = count_sum.mean(axis=0)
     num = 0
@@ -411,28 +438,29 @@ def pagerank(event_set, admins, hmm, cf, ntml):
 
 
 # Calculate Hidden Markov Model
-def decodehmm(frame, hosts, users, stime):
+def decodehmm(frame, users, stime):
     detect_hmm = []
     model = joblib.load(FPATH + "/model/hmm.pkl")
     while(1):
         date = stime.strftime("%Y-%m-%d")
         for user in users:
+            hosts = np.unique(frame[(frame["user"] == user)].host.values)
             for host in hosts:
-                udata = np.array([])
+                udata = []
                 for _, data in frame[(frame["date"].str.contains(date)) & (frame["user"] == user) & (frame["host"] == host)].iterrows():
                     id = data["id"]
                     if id == 4776:
-                        udata = np.append(udata, [0], axis=0)
+                        udata.append(0)
                     elif id == 4768:
-                        udata = np.append(udata, [1], axis=0)
+                        udata.append(1)
                     elif id == 4769:
-                        udata = np.append(udata, [2], axis=0)
+                        udata.append(2)
                     elif id == 4624:
-                        udata = np.append(udata, [3], axis=0)
+                        udata.append(3)
                     elif id == 4625:
-                        udata = np.append(udata, [4], axis=0)
-                if udata.shape[0] > 2:
-                    data_decode = model.predict(np.array([udata], dtype="int").T)
+                        udata.append(4)
+                if len(udata) > 2:
+                    data_decode = model.predict(np.array([np.array(udata)], dtype="int").T)
                     unique_data = np.unique(data_decode)
                     if unique_data.shape[0] == 2:
                         if user not in detect_hmm:
@@ -446,7 +474,7 @@ def decodehmm(frame, hosts, users, stime):
 
 
 # Learning Hidden Markov Model
-def learnhmm(frame, hosts, users, stime):
+def learnhmm(frame, users, stime):
     lengths = []
     data_array = np.array([])
     # start_probability = np.array([0.52, 0.37, 0.11])
@@ -456,6 +484,7 @@ def learnhmm(frame, hosts, users, stime):
     while(1):
         date = stime.strftime("%Y-%m-%d")
         for user in users:
+            hosts = np.unique(frame[(frame["user"] == user)].host.values)
             for host in hosts:
                 udata = np.array([])
                 for _, data in frame[(frame["date"].str.contains(date)) & (frame["user"] == user) & (frame["host"] == host)].iterrows():
@@ -475,9 +504,9 @@ def learnhmm(frame, hosts, users, stime):
     data_array[data_array == 4769] = 2
     data_array[data_array == 4624] = 3
     data_array[data_array == 4625] = 4
-    #model = hmm.GaussianHMM(n_components=3, covariance_type="full", n_iter=10000)
+    # model = hmm.GaussianHMM(n_components=3, covariance_type="full", n_iter=10000)
     model = hmm.MultinomialHMM(n_components=3, n_iter=10000)
-    #model.startprob_ = start_probability
+    # model.startprob_ = start_probability
     model.emissionprob_ = emission_probability
     model.fit(np.array([data_array], dtype="int").T, lengths)
     joblib.dump(model, FPATH + "/model/hmm.pkl")
@@ -487,7 +516,8 @@ def to_lxml(record_xml):
     rep_xml = record_xml.replace("xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"", "")
     set_xml = "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\" ?>%s" % rep_xml
     fin_xml = set_xml.encode("utf-8")
-    return etree.fromstring(fin_xml)
+    parser = etree.XMLParser(resolve_entities=False)
+    return etree.fromstring(fin_xml, parser)
 
 
 def xml_records(filename):
@@ -500,7 +530,7 @@ def xml_records(filename):
                     yield xml, e
 
     if args.xmls:
-        with open(filename,'r') as fx:
+        with open(filename, 'r') as fx:
             xdata = fx.read()
             fixdata = xdata.replace("<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>", "").replace("</Events>", "").replace("<Events>", "")
             # fixdata = xdata.replace("<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>", "")
@@ -514,11 +544,12 @@ def xml_records(filename):
                     except etree.XMLSyntaxError as e:
                         yield xml, e
 
+
 # Parse the EVTX file
 def parse_evtx(evtx_list):
     event_set = pd.DataFrame(index=[], columns=["eventid", "ipaddress", "username", "logintype", "status", "authname"])
     count_set = pd.DataFrame(index=[], columns=["dates", "eventid", "username"])
-    ml_frame = pd.DataFrame(index=[], columns=["date","user","host","id"])
+    ml_frame = pd.DataFrame(index=[], columns=["date", "user", "host", "id"])
     username_set = []
     domain_set = []
     admins = []
@@ -528,9 +559,14 @@ def parse_evtx(evtx_list):
     policylist = []
     addusers = {}
     delusers = {}
-    changegroups = {}
+    addgroups = {}
+    removegroups = {}
     sids = {}
     hosts = {}
+    dcsync_count = {}
+    dcsync = {}
+    dcshadow_check = []
+    dcshadow = {}
     count = 0
     record_sum = 0
     starttime = None
@@ -555,7 +591,7 @@ def parse_evtx(evtx_list):
 
     if args.todate:
         try:
-            tdatetime =  datetime.datetime.strptime(args.todate, "%Y%m%d%H%M%S")
+            tdatetime = datetime.datetime.strptime(args.todate, "%Y%m%d%H%M%S")
             print("[*] Parse the EVTX from %s." % tdatetime.strftime("%Y-%m-%d %H:%M:%S"))
         except:
             sys.exit("[!] To date does not match format '%Y%m%d%H%M%S'.")
@@ -579,7 +615,7 @@ def parse_evtx(evtx_list):
                             record_sum = record_sum + last_record
                             break
                 except:
-                    record_sum =  record_sum + fh.next_record_number()
+                    record_sum = record_sum + fh.next_record_number()
 
         if args.xmls:
             with open(evtx_file, "r") as fb:
@@ -643,7 +679,7 @@ def parse_evtx(evtx_list):
 
                 if eventid == 4672:
                     for data in event_data:
-                        if data.get("Name") in "SubjectUserName" and data.text != None:
+                        if data.get("Name") in "SubjectUserName" and data.text is not None and not re.search(UCHECK, data.text):
                             username = data.text.split("@")[0]
                             if username[-1:] not in "$":
                                 username = username.lower() + "@"
@@ -653,7 +689,7 @@ def parse_evtx(evtx_list):
                         admins.append(username)
                 elif eventid in [4720, 4726]:
                     for data in event_data:
-                        if data.get("Name") in "TargetUserName" and data.text != None:
+                        if data.get("Name") in "TargetUserName" and data.text is not None and not re.search(UCHECK, data.text):
                             username = data.text.split("@")[0]
                             if username[-1:] not in "$":
                                 username = username.lower() + "@"
@@ -665,63 +701,87 @@ def parse_evtx(evtx_list):
                         delusers[username] = etime.strftime("%Y-%m-%d %H:%M:%S")
                 elif eventid == 4719:
                     for data in event_data:
-                        if data.get("Name") in "SubjectUserName" and data.text != None:
+                        if data.get("Name") in "SubjectUserName" and data.text is not None and not re.search(UCHECK, data.text):
                             username = data.text.split("@")[0]
                             if username[-1:] not in "$":
                                 username = username.lower() + "@"
                             else:
                                 username = "-"
-                        if data.get("Name") in "CategoryId" and data.text != None:
+                        if data.get("Name") in "CategoryId" and data.text is not None and re.search(r"\A%%\d{4}\Z", data.text):
                             category = data.text
-                        if data.get("Name") in "SubcategoryGuid" and data.text != None:
+                        if data.get("Name") in "SubcategoryGuid" and data.text is not None and re.search(r"\A{[\w\-]*}\Z", data.text):
                             guid = data.text
                     policylist.append([etime.strftime("%Y-%m-%d %H:%M:%S"), username, category, guid.lower()])
                 elif eventid in [4728, 4732, 4756]:
                     for data in event_data:
-                        if data.get("Name") in "TargetUserName" and data.text != None:
+                        if data.get("Name") in "TargetUserName" and data.text is not None and not re.search(UCHECK, data.text):
                             groupname = data.text
-                        elif data.get("Name") in "MemberSid" and data.text not in "-" and data.text != None:
+                        elif data.get("Name") in "MemberSid" and data.text not in "-" and data.text is not None and re.search(r"\AS-[0-9\-]*\Z", data.text):
                             usid = data.text
-                    changegroups[usid] = "AddGroup: " + groupname + "(" + etime.strftime("%Y-%m-%d %H:%M:%S") + ")"
+                    addgroups[usid] = "AddGroup: " + groupname + "(" + etime.strftime("%Y-%m-%d %H:%M:%S") + ") "
                 elif eventid in [4729, 4733, 4757]:
                     for data in event_data:
-                        if data.get("Name") in "TargetUserName" and data.text != None:
+                        if data.get("Name") in "TargetUserName" and data.text is not None and not re.search(UCHECK, data.text):
                             groupname = data.text
-                        elif data.get("Name") in "MemberSid" and data.text not in "-" and data.text != None:
+                        elif data.get("Name") in "MemberSid" and data.text not in "-" and data.text is not None and re.search(r"\AS-[0-9\-]*\Z", data.text):
                             usid = data.text
-                    changegroups[usid] = "RemoveGroup: " + groupname + "(" + etime.strftime("%Y-%m-%d %H:%M:%S") + ")"
+                    removegroups[usid] = "RemoveGroup: " + groupname + "(" + etime.strftime("%Y-%m-%d %H:%M:%S") + ") "
+                elif eventid == 4662:
+                    for data in event_data:
+                        if data.get("Name") in "SubjectUserName" and data.text is not None and not re.search(UCHECK, data.text):
+                            username = data.text.split("@")[0]
+                            if username[-1:] not in "$":
+                                username = username.lower() + "@"
+                            else:
+                                username = "-"
+                        dcsync_count[username] = dcsync_count.get(username, 0) + 1
+                        if dcsync_count[username] == 3:
+                            dcsync[username] = etime.strftime("%Y-%m-%d %H:%M:%S")
+                            dcsync_count[username] = 0
+                elif eventid in [5137, 5141]:
+                    for data in event_data:
+                        if data.get("Name") in "SubjectUserName" and data.text is not None and not re.search(UCHECK, data.text):
+                            username = data.text.split("@")[0]
+                            if username[-1:] not in "$":
+                                username = username.lower() + "@"
+                            else:
+                                username = "-"
+                        if etime.strftime("%Y-%m-%d %H:%M:%S") in dcshadow_check:
+                            dcshadow[username] = etime.strftime("%Y-%m-%d %H:%M:%S")
+                        else:
+                            dcshadow_check.append(etime.strftime("%Y-%m-%d %H:%M:%S"))
                 else:
                     for data in event_data:
-                        if data.get("Name") in ["IpAddress", "Workstation"] and data.text != None:
+                        if data.get("Name") in ["IpAddress", "Workstation"] and data.text is not None and (not re.search(HCHECK, data.text) or re.search(IPv4_PATTERN, data.text) or re.search(r"\A::ffff:\d+\.\d+\.\d+\.\d+\Z", data.text) or re.search(IPv6_PATTERN, data.text)):
                             ipaddress = data.text.split("@")[0]
                             ipaddress = ipaddress.lower().replace("::ffff:", "")
                             ipaddress = ipaddress.replace("\\", "")
 
-                        if data.get("Name") == "WorkstationName" and data.text != None:
+                        if data.get("Name") == "WorkstationName" and data.text is not None and (not re.search(HCHECK, data.text) or re.search(IPv4_PATTERN, data.text) or re.search(r"\A::ffff:\d+\.\d+\.\d+\.\d+\Z", data.text) or re.search(IPv6_PATTERN, data.text)):
                             hostname = data.text.split("@")[0]
                             hostname = hostname.lower().replace("::ffff:", "")
                             hostname = hostname.replace("\\", "")
 
-                        if data.get("Name") in "TargetUserName" and data.text != None:
+                        if data.get("Name") in "TargetUserName" and data.text is not None and not re.search(UCHECK, data.text):
                             username = data.text.split("@")[0]
                             if username[-1:] not in "$":
                                 username = username.lower() + "@"
                             else:
                                 username = "-"
 
-                        if data.get("Name") in "TargetDomainName" and data.text != None:
+                        if data.get("Name") in "TargetDomainName" and data.text is not None and not re.search(HCHECK, data.text):
                             domain = data.text
 
-                        if data.get("Name") in ["TargetUserSid", "TargetSid"] and data.text != None and data.text[0:2] in "S-1":
+                        if data.get("Name") in ["TargetUserSid", "TargetSid"] and data.text is not None and re.search(r"\AS-[0-9\-]*\Z", data.text):
                             sid = data.text
 
-                        if data.get("Name") in "LogonType":
+                        if data.get("Name") in "LogonType" and re.search(r"\A\d{1,2}\Z", data.text):
                             logintype = int(data.text)
 
-                        if data.get("Name") in "Status":
+                        if data.get("Name") in "Status" and re.search(r"\A0x\w{8}\Z", data.text):
                             status = data.text
 
-                        if data.get("Name") in "AuthenticationPackageName":
+                        if data.get("Name") in "AuthenticationPackageName" and re.search(r"\A\w*\Z", data.text):
                             authname = data.text
 
                     if username != "-" and ipaddress != "::1" and ipaddress != "127.0.0.1" and (ipaddress != "-" or hostname != "-"):
@@ -731,11 +791,11 @@ def parse_evtx(evtx_list):
                         else:
                             event_series = pd.Series([eventid, hostname, username, logintype, status, authname], index=event_set.columns)
                             ml_series = pd.Series([etime.strftime("%Y-%m-%d %H:%M:%S"), username, hostname, eventid],  index=ml_frame.columns)
-                        event_set = event_set.append(event_series, ignore_index = True)
+                        event_set = event_set.append(event_series, ignore_index=True)
                         ml_frame = ml_frame.append(ml_series, ignore_index=True)
                         # print("%s,%i,%s,%s,%s,%s" % (eventid, ipaddress, username, comment, logintype))
                         count_series = pd.Series([stime.strftime("%Y-%m-%d %H:%M:%S"), eventid, username], index=count_set.columns)
-                        count_set = count_set.append(count_series, ignore_index = True)
+                        count_set = count_set.append(count_series, ignore_index=True)
                         # print("%s,%s" % (stime.strftime("%Y-%m-%d %H:%M:%S"), username))
 
                         if domain != "-":
@@ -750,7 +810,7 @@ def parse_evtx(evtx_list):
                         if sid != "-":
                             sids[username] = sid
 
-                        if hostname != "-" and ipaddress != "-" :
+                        if hostname != "-" and ipaddress != "-":
                             hosts[hostname] = ipaddress
 
                         if authname in "NTML" and authname not in ntmlauth:
@@ -768,7 +828,7 @@ def parse_evtx(evtx_list):
                 user_data = node.xpath("/Event/UserData/ns:LogFileCleared/ns:SubjectUserName", namespaces={"ns": namespace})
                 domain_data = node.xpath("/Event/UserData/ns:LogFileCleared/ns:SubjectDomainName", namespaces={"ns": namespace})
 
-                if user_data[0].text != None:
+                if user_data[0].text is not None:
                     username = user_data[0].text.split("@")[0]
                     if username[-1:] not in "$":
                         deletelog.append(username.lower())
@@ -777,7 +837,7 @@ def parse_evtx(evtx_list):
                 else:
                     deletelog.append("-")
 
-                if domain_data[0].text != None:
+                if domain_data[0].text is not None:
                     deletelog.append(domain_data[0].text)
                 else:
                     deletelog.append("-")
@@ -804,7 +864,7 @@ def parse_evtx(evtx_list):
     ml_frame = ml_frame.sort_values(by="date")
     if args.learn:
         print("[*] Learning event logs using Hidden Markov Model.")
-        learnhmm(ml_frame, event_set["ipaddress"].drop_duplicates(), username_set, datetime.datetime(*starttime.timetuple()[:3]))
+        learnhmm(ml_frame, username_set, datetime.datetime(*starttime.timetuple()[:3]))
 
     # Calculate ChangeFinder
     print("[*] Calculate ChangeFinder.")
@@ -812,7 +872,7 @@ def parse_evtx(evtx_list):
 
     # Calculate Hidden Markov Model
     print("[*] Calculate Hidden Markov Model.")
-    detect_hmm = decodehmm(ml_frame, event_set["ipaddress"].drop_duplicates(), username_set, datetime.datetime(*starttime.timetuple()[:3]))
+    detect_hmm = decodehmm(ml_frame, username_set, datetime.datetime(*starttime.timetuple()[:3]))
 
     # Calculate PageRank
     print("[*] Calculate PageRank.")
@@ -822,13 +882,13 @@ def parse_evtx(evtx_list):
     print("[*] Creating a graph data.")
 
     try:
-        graph_http = "http://" + NEO4J_USER + ":" + NEO4J_PASSWORD +"@" + NEO4J_SERVER + ":" + NEO4J_PORT + "/db/data/"
+        graph_http = "http://" + NEO4J_USER + ":" + NEO4J_PASSWORD + "@" + NEO4J_SERVER + ":" + NEO4J_PORT + "/db/data/"
         GRAPH = Graph(graph_http)
     except:
         sys.exit("[!] Can't connect Neo4j Database.")
 
     tx = GRAPH.begin()
-    hosts_inv = {v:k for k, v in hosts.items()}
+    hosts_inv = {v: k for k, v in hosts.items()}
     for ipaddress in event_set["ipaddress"].drop_duplicates():
         if ipaddress in hosts_inv:
             hostname = hosts_inv[ipaddress]
@@ -850,16 +910,22 @@ def parse_evtx(evtx_list):
         if username in addusers:
             ustatus += "Created(" + addusers[username] + ") "
         if username in delusers:
-            ustatus += "Deleted(" + addusers[username] + ") "
-        if sid in changegroups:
-            ustatus += changegroups[sid]
+            ustatus += "Deleted(" + delusers[username] + ") "
+        if sid in addgroups:
+            ustatus += addgroups[sid]
+        if sid in removegroups:
+            ustatus += removegroups[sid]
+        if username in dcsync:
+            ustatus += "DCSync(" + dcsync[username] + ") "
+        if username in dcshadow:
+            ustatus += "DCShadow(" + dcshadow[username] + ") "
         if not ustatus:
             ustatus = "-"
-        tx.append(statement_user, {"user": username[:-1], "rank": ranks[username],"rights": rights,"sid": sid,"status": ustatus,
-                                                    "counts": ",".join(map(str, timelines[i*6])), "counts4624": ",".join(map(str, timelines[i*6+1])),
-                                                    "counts4625": ",".join(map(str, timelines[i*6+2])), "counts4768": ",".join(map(str, timelines[i*6+3])),
-                                                    "counts4769": ",".join(map(str, timelines[i*6+4])), "counts4776": ",".join(map(str, timelines[i*6+5])),
-                                                    "detect": ",".join(map(str, detects[i]))})
+        tx.append(statement_user, {"user": username[:-1], "rank": ranks[username], "rights": rights, "sid": sid, "status": ustatus,
+                                   "counts": ",".join(map(str, timelines[i*6])), "counts4624": ",".join(map(str, timelines[i*6+1])),
+                                   "counts4625": ",".join(map(str, timelines[i*6+2])), "counts4768": ",".join(map(str, timelines[i*6+3])),
+                                   "counts4769": ",".join(map(str, timelines[i*6+4])), "counts4776": ",".join(map(str, timelines[i*6+5])),
+                                   "detect": ",".join(map(str, detects[i]))})
         i += 1
 
     for domain in domains:
@@ -867,13 +933,13 @@ def parse_evtx(evtx_list):
 
     for _, events in event_set.iterrows():
         tx.append(statement_r, {"user": events["username"][:-1], "IP": events["ipaddress"], "id": events["eventid"], "logintype": events["logintype"],
-                                               "status": events["status"], "count": events["count"], "authname": events["authname"]})
+                                "status": events["status"], "count": events["count"], "authname": events["authname"]})
 
     for username, domain in domain_set_uniq:
         tx.append(statement_dr, {"user": username[:-1], "domain": domain})
 
     tx.append(statement_date, {"Daterange": "Daterange", "start": datetime.datetime(*starttime.timetuple()[:4]).strftime("%Y-%m-%d %H:%M:%S"),
-                                                 "end": datetime.datetime(*endtime.timetuple()[:4]).strftime("%Y-%m-%d %H:%M:%S")})
+                               "end": datetime.datetime(*endtime.timetuple()[:4]).strftime("%Y-%m-%d %H:%M:%S")})
 
     if len(deletelog):
         tx.append(statement_del, {"deletetime": deletelog[0], "user": deletelog[1], "domain": deletelog[2]})
@@ -925,7 +991,7 @@ def main():
         sys.exit("[!] scikit-learn must be installed for this script.")
 
     try:
-        graph_http = "http://" + NEO4J_USER + ":" + NEO4J_PASSWORD +"@" + NEO4J_SERVER + ":" + NEO4J_PORT + "/db/data/"
+        graph_http = "http://" + NEO4J_USER + ":" + NEO4J_PASSWORD + "@" + NEO4J_SERVER + ":" + NEO4J_PORT + "/db/data/"
         GRAPH = Graph(graph_http)
     except:
         sys.exit("[!] Can't connect Neo4j Database.")
@@ -956,6 +1022,7 @@ def main():
         parse_evtx(args.xmls)
 
     print("[*] Script end. %s" % datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
 
 if __name__ == "__main__":
     main()
